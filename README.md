@@ -1,43 +1,67 @@
-# JAN-9301 Project Room · 로컬 시연판
+# eduros · JAN-9301 Project Room
 
-서버나 Supabase 없이 PC에서 바로 시연하는 버전입니다.
-
-## 실행
-
-1. `index.html`과 `proposal.html`을 같은 폴더에 둡니다.
-2. `index.html`을 더블클릭해 Chrome이나 Edge로 엽니다.
-
-인터넷이 없어도 작동합니다. 인터넷이 없으면 글꼴만 기본 글꼴로 바뀝니다.
-
-## 화면 구성
+JRC와 KJ Engineering / EDUROS가 **JAN-9301 JRC ECDIS Type Specific Training** 제안서를 함께 검토하고 프로젝트를 관리하는 페이지입니다.
 
 | 메뉴 | 내용 |
 |---|---|
 | Home | 제안서 · ClassNK 가이드 · 프로젝트 룸 바로가기, 전체 일정 타임라인, 문서 현황 |
 | Proposal | 제안서 14개 섹션. 섹션마다 "Review this section →" |
-| ClassNK guide | ClassNK 학습 영역(a–j) × 과정 13단계 매트릭스. 칸을 누르면 해당 학습 목표(Object number) 표시 |
-| Project room | Overview · Timeline(단계별 일정과 진행률) · Proposal review(양측 승인, 댓글) · Tasks · Decisions · Documents(Proposal · NDA · Contract 파일 업로드) |
+| ClassNK guide | ClassNK 학습 영역(a–j) × 과정 13단계 매트릭스 |
+| Project room | Overview · Timeline · Proposal review · Tasks · Decisions · Documents |
 
-## 언어 전환
+상단 오른쪽 **EN / 日本語** 버튼으로 메뉴와 안내 문구의 언어를 바꿉니다.
 
-상단 오른쪽 **EN / 日本語** 버튼으로 메뉴, 버튼, 안내 문구의 언어를 바꿉니다. 선택한 언어는 다음에 열 때도 유지됩니다. 제안서 본문과 섹션, 작업, 결정 사항, ClassNK 학습 항목 같은 데이터 내용은 영어 그대로 표시됩니다.
+## 일정 관리: 시작일 · 완료 예정일 · 완료일
 
-## JRC와 함께 시연하기
+| 대상 | 입력 위치 | 자동 처리 |
+|---|---|---|
+| 일정 단계(Proof of concept 등 4단계) | Timeline 탭 → Phase schedule 표 | 완료일을 넣으면 타임라인에 ✓ 표시, 상태가 Complete로 바뀜 |
+| 작업(Tasks) | 작업 이름을 눌러 편집 | 상태를 Done으로 바꾸면 완료일에 오늘 날짜가 들어감 |
+| 결정 사항(Decisions) | 카드의 날짜 칸 | 상태를 Agreed로 바꾸면 완료일에 오늘 날짜가 들어감 |
 
-1. 창을 두 개 엽니다. 같은 브라우저에서 `index.html`을 한 번 더 열면 됩니다.
-2. 한 창은 상단 **Demo as → JRC**, 다른 창은 **KJ Engineering / EDUROS**를 고릅니다.
-3. 한쪽에서 승인하거나 댓글을 달면 다른 창에 바로 반영됩니다.
+## 두 가지 실행 방식
 
-## 데이터
+`index.html` 맨 위의 `JRC_CONFIG`로 정합니다.
 
-- 시연 중 바꾼 내용은 이 브라우저에만 저장됩니다. 다른 PC나 다른 브라우저와는 공유되지 않습니다.
-- 올린 문서 파일도 이 브라우저 안(IndexedDB)에만 저장됩니다. 파일 하나당 20 MB까지 올릴 수 있습니다.
-- 상단 **Reset demo**를 누르면 처음 상태로 돌아가고, 올린 파일도 지워집니다.
-- 실제 운영(여러 회사가 각자 PC에서 접속)은 Supabase 버전(`eduros.zip`)을 사용하십시오.
+| | 로컬 시연 | Supabase 연결 |
+|---|---|---|
+| 설정 | `url`, `anonKey`를 비워 둠 (기본값) | Supabase 값 입력 |
+| 데이터 | 각 브라우저에만 저장, "Reset demo"로 초기화 | Supabase에 저장, JRC와 실시간 공유 |
+| 사용자 | 상단 "Demo as"로 JRC / KJ 선택 | 이메일 로그인, 소속은 멤버 명단에서 결정 |
+| 문서 파일 | 브라우저 안(IndexedDB) | Supabase Storage(비공개 버킷) |
 
-## ClassNK 가이드 출처
+## Supabase 연결 순서
 
-JRC Course outline Rev. 0.0, §3.2 "Covering the learning area of the NK standard"
-- 학습 영역 10개(a–j)
-- 학습 목표 37개 (Object number 1.1–11.1)
-- 매핑된 과정 단계: 1–11단계. 12단계(기존 ECDIS 운용)와 13단계(MCQ 시험)는 학습 영역에 직접 매핑되지 않습니다.
+1. https://supabase.com 에서 프로젝트를 만듭니다. 리전은 Seoul 또는 Tokyo를 권장합니다.
+2. `supabase/setup.sql`의 **6번 항목(members)** 주석을 풀고 참여자 이메일 · 이름 · 소속을 넣습니다.
+   - `'jrc'` : JRC 담당자
+   - `'kj'` : KJ Engineering / EDUROS 담당자
+3. **SQL Editor → New query**에 파일 전체를 붙여 넣고 **Run**을 누릅니다. 이 한 번으로 다음이 모두 만들어집니다. 다시 실행해도 기존 데이터는 유지됩니다.
+   - 테이블, 권한 규칙, 실시간 갱신
+   - 초기 데이터: 섹션 13개, 작업 17개, 결정 사항 5개, 일정 단계 4개
+   - 문서 저장소(`documents` 버킷)
+4. **Authentication → Providers → Email**이 켜져 있는지 확인합니다.
+5. **Authentication → URL Configuration**에 다음을 넣습니다.
+   - Site URL: `https://oks-kje.github.io/eduros/`
+   - Redirect URLs: `https://oks-kje.github.io/eduros/**`
+6. **Project Settings → API**에서 Project URL과 anon public 키를 복사해 `index.html` 맨 위 `JRC_CONFIG`에 넣고 커밋합니다.
+
+**키 관련 주의**
+- `anon public` 키는 공개 저장소에 올려도 됩니다. 데이터 접근은 권한 규칙(RLS)이 막습니다.
+- `service_role` 키는 절대 올리지 마십시오.
+
+### 멤버 추가
+
+```sql
+insert into public.members (email, name, org)
+values ('new.person@company.com', 'New Person', 'jrc')
+on conflict (email) do update set name = excluded.name, org = excluded.org;
+```
+
+## 권한 규칙 (서버에서 강제)
+
+- **접근:** 멤버 명단에 있는 이메일로 로그인한 사람만 데이터와 문서를 보고 수정할 수 있습니다.
+- **섹션 승인:** 소속별로만 가능합니다. JRC는 JRC 칸만, KJ/EDUROS는 KJ 칸만 바꿀 수 있습니다.
+- **자동 기록:** 댓글과 문서의 작성자, 소속, 시각은 로그인 정보로 자동 기록됩니다.
+- **관리자 전용:** 일정 단계의 이름과 순서, 섹션 제목과 요약은 SQL Editor에서만 바꿀 수 있습니다. 멤버는 날짜만 수정합니다.
+- **파일:** 문서 파일은 비공개 저장소에 보관되며, 열 때마다 10분짜리 임시 링크가 만들어집니다.

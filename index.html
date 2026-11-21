@@ -4,6 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>JAN-9301 Project Room</title>
+<!-- ================================================================
+     Supabase connection. Leave both values empty to run as a local
+     demo (data stays in each browser). Fill them in to share data.
+     Supabase Dashboard → Project Settings → API
+       url     : Project URL
+       anonKey : anon public key  (never paste the service_role key)
+     ================================================================ -->
+<script>
+  window.JRC_CONFIG = {
+    url: '',
+    anonKey: ''
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap">
@@ -156,6 +170,26 @@ table.mx .aname b{font-family:var(--mono);color:var(--accent)}
 .chip.draft{background:var(--info-weak);color:var(--info)}
 .chip.none{background:var(--sunk);color:var(--muted)}
 @media (max-width:860px){.tiles,.docgrid{grid-template-columns:1fr}}
+
+/* dates */
+.rows .trow{grid-template-columns:120px minmax(0,1fr) 110px 200px 40px}
+.dates span{white-space:nowrap}
+.dates{display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.dates .done{color:var(--ok);font-weight:600}
+.dates .late{color:var(--accent);font-weight:600}
+.dfields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.dfields label{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--muted);font-weight:500;min-width:0}
+.dfields input{padding:5px 8px;font-size:13px}
+.dfields .ro{font-family:var(--mono);font-size:13px;color:var(--fg);padding:5px 0}
+.form{grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr)) repeat(3,minmax(0,1fr)) auto}
+table.ps{width:100%;border-collapse:collapse;font-size:14px}
+table.ps th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+table.ps td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.ps input{padding:4px 6px;font-size:13px;width:auto}
+.tl .fin{position:absolute;top:14px;width:16px;height:16px;transform:translateX(-8px);border-radius:50%;background:var(--ok);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;z-index:2}
+.tl.compact .fin{top:12px}
+@media (max-width:860px){.form{grid-template-columns:1fr 1fr}.dfields{grid-template-columns:1fr 1fr 1fr}}
+@media (max-width:600px){.rows .trow{grid-template-columns:minmax(0,1fr) 40px}.dfields{grid-template-columns:1fr}}
 
 /* landing */
 .hero{display:flex;flex-direction:column;gap:12px;padding-block:20px 8px;max-width:780px}
@@ -333,11 +367,13 @@ img{max-width:100%}
       </div>
       <div class="side" id="asBox">
         <span class="small muted" id="asLabel">Demo as</span>
-        <div class="seg" role="group" aria-labelledby="asLabel">
+        <div class="seg" id="orgSeg" role="group" aria-labelledby="asLabel">
           <button type="button" id="as-jrc" data-org="jrc" aria-pressed="false">JRC</button>
           <button type="button" id="as-kj" data-org="kj" aria-pressed="false">KJ Engineering / EDUROS</button>
         </div>
         <span id="resetBox"><button type="button" class="btn ghost" id="resetBtn">Reset demo</button></span>
+        <span class="small muted" id="whoami" hidden></span>
+        <button type="button" class="btn ghost" id="signout" hidden>Sign out</button>
         <div class="seg lang" role="group" aria-label="Language" data-noi18n>
           <button type="button" id="lang-en" data-lang="en" aria-pressed="true">EN</button>
           <button type="button" id="lang-ja" data-lang="ja" aria-pressed="false">日本語</button>
@@ -916,12 +952,19 @@ a.visit:hover{background:var(--amber);color:#fff}
 
 <script>
 (function(){
-  const PHASES = [
-    {id:'poc', name:'Proof of concept', when:'Q4 2026 – Q1 2027', start:'2026-10-01', end:'2027-03-31'},
-    {id:'dev', name:'Full development', when:'H1 2027', start:'2027-04-01', end:'2027-06-30'},
-    {id:'launch', name:'Launch', when:'H2 2027', start:'2027-07-01', end:'2027-12-31'},
-    {id:'release', name:'JAN-9301 release', when:'2028', start:'2028-01-01', end:'2028-12-31'},
+  // start = start date, end = planned completion, done = actual completion
+  const PHASE_SEED = [
+    {id:'poc', name:'Proof of concept', sort:1, start:'2026-10-01', end:'2027-03-31', done:''},
+    {id:'dev', name:'Full development', sort:2, start:'2027-04-01', end:'2027-06-30', done:''},
+    {id:'launch', name:'Launch', sort:3, start:'2027-07-01', end:'2027-12-31', done:''},
+    {id:'release', name:'JAN-9301 release', sort:4, start:'2028-01-01', end:'2028-12-31', done:''},
   ];
+  const PHASES = PHASE_SEED.map(p=>Object.assign({},p));
+  function fmtMonth(iso){ if(!iso) return '—'; const m=/^(\d{4})-(\d{2})/.exec(iso); if(!m) return iso; return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m[2]-1]+' '+m[1]; }
+  function setPhases(list){ const byId=Object.fromEntries((list||[]).map(p=>[p.id,p]));
+    const merged=PHASE_SEED.map(p=>Object.assign({},p,byId[p.id]||{})); merged.sort((a,b)=>(a.sort||0)-(b.sort||0));
+    merged.forEach(p=>{ p.when=fmtMonth(p.start)+' – '+fmtMonth(p.end); }); PHASES.splice(0,PHASES.length,...merged); }
+  setPhases([]);
   const ORGS = {jrc:'JRC', kj:'KJ / EDUROS', joint:'Joint'};
   const SECTION_STATUS = {pending:'Not reviewed', approved:'Approved', changes:'Changes requested'};
   const TASK_STATUS = {todo:'To do', doing:'In progress', review:'In review', done:'Done'};
@@ -940,6 +983,8 @@ a.visit:hover{background:var(--amber);color:#fff}
 
   // ---------- language (UI labels only; proposal text and project data stay as written) ----------
   const I18N={
+"Start": "開始日", "Planned completion": "完了予定日", "Completed": "完了日", "Phase schedule": "フェーズ日程", "Start · Planned completion · Completed": "開始日 · 完了予定日 · 完了日", "Schedule updated": "日程を更新しました", "Overdue": "期限超過", "Shared work plan by roadmap phase, with start, planned completion and completed dates. Change the status from the list; select a task to edit it.": "ロードマップのフェーズ別に共有する作業計画です。開始日・完了予定日・完了日を管理します。一覧からステータスを変更し、タスクを選択すると編集できます。", "Points JRC and EDUROS need to agree, with start, planned completion and completed dates. Record the outcome once agreed.": "JRCとEDUROSが合意すべき事項です。開始日・完了予定日・完了日を管理し、合意したら結果を記録してください。", "Sign in as a project member to upload.": "アップロードするにはプロジェクトメンバーとしてログインしてください。", "Files are stored in the project’s private Supabase storage. Only project members can open them.": "ファイルはプロジェクト専用のSupabaseストレージに保存され、プロジェクトメンバーのみが開けます。", "Sign out": "ログアウト", "Not signed in": "未ログイン", "Send sign-in link": "ログインリンクを送信", "Sign in to the project room.": "プロジェクトルームにログインしてください。", "Enter your work e-mail and we will send you a sign-in link.": "業務用メールアドレスを入力すると、ログインリンクをお送りします。", "Could not load the project data. Check the connection settings and try again.": "プロジェクトデータを読み込めませんでした。接続設定を確認して再度お試しください。", "Sign in to see the project data.": "プロジェクトデータを見るにはログインしてください。", "Sign in as a project member to sign off or comment.": "承認やコメントにはプロジェクトメンバーとしてログインしてください。", "Ask KJ Engineering to add it.": "KJ Engineeringに追加を依頼してください。",
+
 "JRC × EDUROS · Joint project": "JRC × EDUROS · 共同プロジェクト",
 "JAN-9301 Type Specific Training": "JAN-9301 機種別トレーニング",
 "Demo as": "デモ操作",
@@ -1023,7 +1068,7 @@ a.visit:hover{background:var(--amber);color:#fff}
 "Latest comments": "最新コメント",
 "No comments yet. Open a proposal section to start the review.": "コメントはまだありません。提案書のセクションを開いてレビューを始めてください。",
 "Nothing waiting. Changes requested, tasks in review, overdue tasks and open decisions will show here.": "対応待ちの項目はありません。修正依頼、レビュー中のタスク、期限超過のタスク、未決の決定事項がここに表示されます。",
-"Roadmap phases from proof of concept to the JAN-9301 release, with task progress and dated tasks. Add a due date to a task to place it on the timeline.": "PoCからJAN-9301発売までのロードマップを、タスクの進捗と期日付きタスクとともに表示します。タスクに期日を入れるとタイムラインに表示されます。",
+"Roadmap phases from proof of concept to the JAN-9301 release, with task progress and dated tasks. Set each phase’s start, planned completion and completed dates below; tasks with a planned completion date appear on the timeline.": "PoCからJAN-9301発売までのロードマップを、タスクの進捗と期日付きタスクとともに表示します。各フェーズの開始日・完了予定日・完了日は下の表で設定し、完了予定日のあるタスクはタイムラインに表示されます。",
 "Edit tasks →": "タスクを編集 →",
 "Dated tasks": "期日付きタスク",
 "Phase status": "フェーズ状況",
@@ -1126,6 +1171,11 @@ a.visit:hover{background:var(--amber);color:#fff}
 
   const PH_JA={"Proof of concept": "概念実証（PoC）", "Full development": "本開発", "Launch": "サービス開始", "JAN-9301 release": "JAN-9301 発売"};
   const I18N_RX=[
+    [/^Start (\d{4}-\d{2}-\d{2}|—)$/, (m,a)=>'開始 '+a],
+    [/^Planned (\d{4}-\d{2}-\d{2}|—)$/, (m,a)=>'完了予定 '+a],
+    [/^✓ Completed (.+)$/, (m,a)=>'✓ 完了 '+a],
+    [/^Completed (\d{4}-\d{2}-\d{2})$/, (m,a)=>'完了 '+a],
+
     [/^(\d+) open$/, (m,a)=>'未完了 '+a],
     [/^(\d+)\/(\d+) approved · (\d+) open tasks$/, (m,a,b,c)=>a+'/'+b+' 承認済み · 未完了タスク '+c],
     [/^(\d+)% · current$/, (m,a)=>a+'% · 現在'],
@@ -1199,7 +1249,7 @@ a.visit:hover{background:var(--amber);color:#fff}
     render(); }
   window.addEventListener('hashchange', route);
 
-  function writable(){ return !!S.org; }
+  function writable(){ return MODE==='supabase' ? (!!S.member && !S.readOnly) : !!S.org; }
   function needOrgMsg(){ return S.org ? '' : 'Choose “Demo as” at the top to sign off or comment.'; }
 
   async function write(fn, okMsg){
@@ -1215,7 +1265,7 @@ a.visit:hover{background:var(--amber);color:#fff}
 
   // ---------- derived ----------
   const commentsFor = ref => S.comments.filter(c=>c.ref===ref).sort((a,b)=>(a.at||'').localeCompare(b.at||''));
-  function currentPhase(){ const t=today(); const p=PHASES.find(p=>t>=p.start && t<=p.end); return p ? p.id : (t<PHASES[0].start?'poc':'release'); }
+  function currentPhase(){ const t=today(); const open=PHASES.filter(p=>!p.done); const p=open.find(p=>p.start&&t>=p.start&&(!p.end||t<=p.end)) || open.find(p=>p.start&&t<p.start) || open[open.length-1] || PHASES[PHASES.length-1]; return p?p.id:'poc'; }
 
   // ---------- render ----------
   function render(){
@@ -1240,11 +1290,13 @@ a.visit:hover{background:var(--amber);color:#fff}
 
   function renderBanner(){
     const b=$('#banner');
+    if(MODE==='supabase'){ renderBannerSb(b); return; }
     const h=`<div class="note">Local demo. Changes are saved in this browser only${S.persist?'':' for this session (browser storage is unavailable)'}. Open the page in a second window and pick the other side under “Demo as” to show JRC and EDUROS working together. “Reset demo” restores the starting data and clears uploaded files.</div>`;
     b.innerHTML=h; b.style.marginBottom='16px';
   }
 
   function loadingOrEmpty(key, emptyHtml){
+    if(MODE==='supabase' && !S.loaded[key]) return S.dbState==='ok'?'<div class="empty">Loading…</div>':'<div class="empty">Sign in to see the project data.</div>';
 
     return emptyHtml;
   }
@@ -1279,29 +1331,37 @@ a.visit:hover{background:var(--amber);color:#fff}
     let rows='';
     PHASES.forEach(p=>{
       const pt=S.tasks.filter(t=>t.phase===p.id), done=pt.filter(t=>t.status==='done').length, pc=pt.length?Math.round(done/pt.length*100):0;
-      const l=pctOf(p.start), r=pctOf(new Date(toLocal(p.end).getTime()+86400000)), w=Math.max(r-l,1);
-      const ms=pt.filter(t=>t.due).map(t=>`<span class="ms${t.status==='done'?' done':''}" style="left:${pctOf(t.due)}%" title="${esc(t.title)} · ${esc(t.due)}"></span>`).join('');
+      const l=pctOf(p.start||p.end), r=pctOf(new Date(toLocal(p.end||p.start).getTime()+86400000)), w=Math.max(r-l,1);
+      const fin=p.done?`<span class="fin" style="left:${pctOf(p.done)}%" title="Completed ${esc(p.done)}">✓</span>`:'';
+      const ms=pt.filter(t=>t.due||t.doneOn).map(t=>`<span class="ms${t.status==='done'?' done':''}" style="left:${pctOf(t.doneOn||t.due)}%" title="${esc(t.title)} · ${esc(t.doneOn?'completed '+t.doneOn:'planned '+t.due)}"></span>`).join('');
       rows+=`<div class="lab"><b>${esc(p.name)}</b><span>${esc(p.when)}${compact?'':` · ${done}/${pt.length} tasks`}</span></div>
-        <div class="trk">${grid()}<span class="bar${p.id===cur?' now':''}" style="left:${l}%;width:${w}%"><i style="width:${pc}%"></i><em>${pc}%${p.id===cur?' · current':''}</em></span>${ms}
+        <div class="trk">${grid()}<span class="bar${p.id===cur?' now':''}" style="left:${l}%;width:${w}%"><i style="width:${pc}%"></i><em>${p.done?'Completed':pc+'%'}${p.id===cur&&!p.done?' · current':''}</em></span>${ms}${fin}
         ${tp>0&&tp<100?`<span class="today" style="left:${tp}%"></span>`:''}</div>`;
     });
     el.innerHTML=`<div class="tl-wrap"><div class="tl${compact?' compact':''}">
         <div class="lab hdr" style="border-top:0"></div><div class="trk hdr">${hdr}${tp>0&&tp<100?`<span class="today" style="left:${tp}%;top:30px"><b>Today</b></span>`:''}</div>
         ${rows}</div></div>
-      <div class="tl-legend" style="margin-top:8px"><span><i style="background:var(--ok)"></i>Tasks done</span><span><i style="background:var(--accent);transform:rotate(45deg)"></i>Dated task</span><span><i style="background:var(--accent);width:2px"></i>Today</span></div>`;
+      <div class="tl-legend" style="margin-top:8px"><span><i style="background:var(--ok)"></i>Tasks done</span><span><i style="background:var(--accent);transform:rotate(45deg)"></i>Dated task</span><span><i style="background:var(--accent);width:2px"></i>Today</span><span><i style="background:var(--ok);border-radius:50%"></i>Completed</span></div>`;
   }
   function renderTimelineView(){
     const v=$('#v-timeline');
-    const dated=S.tasks.filter(t=>t.due).sort((a,b)=>a.due.localeCompare(b.due));
+    const dated=S.tasks.filter(t=>t.due||t.doneOn).sort((a,b)=>(a.doneOn||a.due).localeCompare(b.doneOn||b.due));
     const ph=Object.fromEntries(PHASES.map(p=>[p.id,p]));
-    v.innerHTML=`<div class="toolbar"><div><h2>Project timeline</h2><p class="small muted" style="margin:4px 0 0">Roadmap phases from proof of concept to the JAN-9301 release, with task progress and dated tasks. Add a due date to a task to place it on the timeline.</p></div><a class="btn" href="#tasks">Edit tasks →</a></div>
+    v.innerHTML=`<div class="toolbar"><div><h2>Project timeline</h2><p class="small muted" style="margin:4px 0 0">Roadmap phases from proof of concept to the JAN-9301 release, with task progress and dated tasks. Set each phase’s start, planned completion and completed dates below; tasks with a planned completion date appear on the timeline.</p></div><a class="btn" href="#tasks">Edit tasks →</a></div>
       <div class="panel" id="tl-full"></div>
+      <div class="panel"><div class="ptitle"><h2>Phase schedule</h2><span class="small muted">Start · Planned completion · Completed</span></div>
+        <div style="overflow-x:auto"><table class="ps"><thead><tr><th>Phase</th><th>Start</th><th>Planned completion</th><th>Completed</th><th>Status</th></tr></thead><tbody>
+        ${PHASES.map(p=>{ const dis=!writable(); const st=p.done?'Complete':p.id===currentPhase()?'Current':(p.end&&p.end<today()?'Overdue':'Planned');
+          const inp=(k,v)=>dis?`<span class="mono">${esc(v||'—')}</span>`:`<input type="date" id="ph-${p.id}-${k}" data-phase="${p.id}" data-pk="${k}" value="${esc(v||'')}" aria-label="${esc(p.name)} ${k==='start'?'start':k==='end'?'planned completion':'completed'}">`;
+          return `<tr><td><b>${esc(p.name)}</b></td><td>${inp('start',p.start)}</td><td>${inp('end',p.end)}</td><td>${inp('done',p.done)}</td><td><span class="chip ${st==='Complete'?'done':st==='Current'?'open':st==='Overdue'?'changes':''}">${st}</span></td></tr>`; }).join('')}
+        </tbody></table></div></div>
       <div class="cols">
-        <div class="panel"><h2>Dated tasks</h2><div class="mslist">${dated.length?dated.map(t=>`<div class="r"><span class="mono${t.status!=='done'&&t.due<today()?'" style="color:var(--accent)':''}">${esc(t.due)}</span><span style="min-width:0">${esc(t.title)} <span class="small muted">· ${esc(ph[t.phase]?ph[t.phase].name:'')}</span></span><span class="chip ${esc(t.status)}">${esc(TASK_STATUS[t.status]||t.status)}</span></div>`).join(''):'<div class="empty">No task has a due date yet.</div>'}</div></div>
+        <div class="panel"><h2>Dated tasks</h2><div class="mslist">${dated.length?dated.map(t=>`<div class="r"><span class="mono${t.status!=='done'&&t.due&&t.due<today()?'" style="color:var(--accent)':''}">${esc(t.doneOn?'✓ '+t.doneOn:t.due)}</span><span style="min-width:0">${esc(t.title)} <span class="small muted">· ${esc(ph[t.phase]?ph[t.phase].name:'')}</span></span><span class="chip ${esc(t.status)}">${esc(TASK_STATUS[t.status]||t.status)}</span></div>`).join(''):'<div class="empty">No task has a due date yet.</div>'}</div></div>
         <div class="panel"><h2>Phase status</h2><div class="mslist">${PHASES.map(p=>{ const pt=S.tasks.filter(t=>t.phase===p.id); const c=k=>pt.filter(t=>t.status===k).length;
           return `<div class="r"><span class="mono">${esc(p.when.replace(' – ','–'))}</span><span><b>${esc(p.name)}</b> <span class="small muted">· ${c('done')} done, ${c('doing')+c('review')} in progress, ${c('todo')} to do</span></span><span class="chip ${p.id===currentPhase()?'open':''}">${p.id===currentPhase()?'Current':pt.length&&c('done')===pt.length?'Complete':'Planned'}</span></div>`; }).join('')}</div></div>
       </div>`;
     timelineInto($('#tl-full'), false);
+    v.querySelectorAll('[data-phase]').forEach(inp=>inp.addEventListener('change',()=>{ const f={}; f[inp.dataset.pk]=inp.value||''; write(()=>api.updPhase(inp.dataset.phase,f),'Schedule updated'); }));
   }
 
   // ---------- documents ----------
@@ -1322,11 +1382,11 @@ a.visit:hover{background:var(--amber);color:#fff}
             ${compact||dis?'':(S.confirmDoc===d.id?`<span class="confirm"><button class="btn warn" data-dodel="${esc(d.id)}">Delete</button><button class="btn ghost" data-donodel>Keep</button></span>`:`<button class="btn ghost" data-doask="${esc(d.id)}" aria-label="Delete ${esc(d.name)}" title="Delete">✕</button>`)}</div>`).join('')
             :'<div class="empty" style="padding:2px 0">No file yet.</div>'}
           ${compact&&list.length>2?`<div class="small muted" style="padding-top:6px">+${list.length-2} more</div>`:''}</div>
-        ${dis?(compact?'':'<span class="small muted">Choose “Demo as” at the top to upload.</span>'):`<div class="upl"><input type="file" id="up-${c.id}${compact?'-h':''}" data-up="${c.id}" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.hwp,.zip,.txt,.png,.jpg"><label class="btn${compact?'':' primary'}" for="up-${c.id}${compact?'-h':''}">Upload file</label>${compact?'':'<span class="small muted">or drop a file here · up to 20 MB</span>'}</div>`}
+        ${dis?(compact?'':`<span class="small muted">${MODE==='supabase'?'Sign in as a project member to upload.':'Choose “Demo as” at the top to upload.'}</span>`):`<div class="upl"><input type="file" id="up-${c.id}${compact?'-h':''}" data-up="${c.id}" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.hwp,.zip,.txt,.png,.jpg"><label class="btn${compact?'':' primary'}" for="up-${c.id}${compact?'-h':''}">Upload file</label>${compact?'':'<span class="small muted">or drop a file here · up to 20 MB</span>'}</div>`}
       </div>`; }).join('')}</div>`;
     el.querySelectorAll('[data-up]').forEach(inp=>inp.addEventListener('change',()=>{ const f=inp.files&&inp.files[0]; if(f) uploadDoc(inp.dataset.up,f); inp.value=''; }));
     el.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>openDoc(b.dataset.open)));
-    el.querySelectorAll('[data-dstat]').forEach(sel=>sel.addEventListener('change',()=>{ S.docStatus[sel.dataset.dstat]=sel.value; saveStore(); notifyDocs(); render(); toast('Status updated'); }));
+    el.querySelectorAll('[data-dstat]').forEach(sel=>sel.addEventListener('change',()=>write(()=>api.setDocStatus(sel.dataset.dstat,sel.value),'Status updated')));
     el.querySelectorAll('[data-doask]').forEach(b=>b.addEventListener('click',()=>{ S.confirmDoc=b.dataset.doask; render(); }));
     el.querySelectorAll('[data-donodel]').forEach(b=>b.addEventListener('click',()=>{ S.confirmDoc=null; render(); }));
     el.querySelectorAll('[data-dodel]').forEach(b=>b.addEventListener('click',()=>{ const id=b.dataset.dodel; S.confirmDoc=null; deleteDoc(id); }));
@@ -1339,7 +1399,7 @@ a.visit:hover{background:var(--amber);color:#fff}
   function renderDocsView(){
     const v=$('#v-documents');
     v.innerHTML=`<div class="toolbar"><div><h2>Documents</h2><p class="small muted" style="margin:4px 0 0">Shared files for the proposal, the NDA and the contract. Upload a new version to keep the history; the newest file is listed first.</p></div></div><div id="docs-full"></div>
-      <p class="small muted" style="margin:0">Local demo: files are kept in this browser only and are cleared by “Reset demo”.</p>`;
+      <p class="small muted" style="margin:0">${MODE==='supabase'?'Files are stored in the project’s private Supabase storage. Only project members can open them.':'Local demo: files are kept in this browser only and are cleared by “Reset demo”.'}</p>`;
     docsInto($('#docs-full'), false);
   }
 
@@ -1499,12 +1559,14 @@ a.visit:hover{background:var(--amber);color:#fff}
   }
 
   function taskForm(t){
-    const id=t?t.id:'new'; const x=t||{owner:S.org||'joint', phase:currentPhase(), status:'todo', due:'', title:''};
+    const id=t?t.id:'new'; const x=t||{owner:S.org||'joint', phase:currentPhase(), status:'todo', start:'', due:'', doneOn:'', title:''};
     return `<form class="form" data-form="${esc(id)}">
       <label class="wide">Task<input type="text" id="tf-title-${esc(id)}" name="title" value="${esc(x.title)}" placeholder="What needs to happen" required></label>
       <label>Owner<select id="tf-owner-${esc(id)}" name="owner">${Object.entries(ORGS).map(([k,l])=>`<option value="${k}"${x.owner===k?' selected':''}>${esc(l)}</option>`).join('')}</select></label>
       <label>Phase<select id="tf-phase-${esc(id)}" name="phase">${PHASES.map(p=>`<option value="${p.id}"${x.phase===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
-      <label>Due<input type="date" id="tf-due-${esc(id)}" name="due" value="${esc(x.due||'')}"></label>
+      <label>Start<input type="date" id="tf-start-${esc(id)}" name="start" value="${esc(x.start||'')}"></label>
+      <label>Planned completion<input type="date" id="tf-due-${esc(id)}" name="due" value="${esc(x.due||'')}"></label>
+      <label>Completed<input type="date" id="tf-done-${esc(id)}" name="doneOn" value="${esc(x.doneOn||'')}"></label>
       <div class="btns">${t?`<button type="button" class="btn ghost" data-cancel>Cancel</button>`:''}<button class="btn primary" type="submit">${t?'Save':'Add task'}</button></div>
     </form>`;
   }
@@ -1512,7 +1574,7 @@ a.visit:hover{background:var(--amber);color:#fff}
   function renderTasks(){
     const v=$('#v-tasks'); const f=S.filter;
     const list=S.tasks.filter(t=>f==='all'||t.owner===f);
-    const tb=`<div class="toolbar"><div><h2>Tasks</h2><p class="small muted" style="margin:4px 0 0">Shared work plan by roadmap phase. Change the status from the list; select a task to edit it.</p></div>
+    const tb=`<div class="toolbar"><div><h2>Tasks</h2><p class="small muted" style="margin:4px 0 0">Shared work plan by roadmap phase, with start, planned completion and completed dates. Change the status from the list; select a task to edit it.</p></div>
       <div class="filters" role="group" aria-label="Filter by owner">${[['all','All'],['jrc','JRC'],['kj','KJ / EDUROS'],['joint','Joint']].map(([k,l])=>`<button type="button" data-filter="${k}" aria-pressed="${f===k}">${l}</button>`).join('')}</div></div>`;
     let body='';
     PHASES.forEach(p=>{
@@ -1527,7 +1589,7 @@ a.visit:hover{background:var(--amber);color:#fff}
           <div class="meta2"><select id="ts-${esc(t.id)}" data-status="${esc(t.id)}" aria-label="Status" ${dis?'disabled':''}>${Object.entries(TASK_STATUS).map(([k,l])=>`<option value="${k}"${t.status===k?' selected':''}>${l}</option>`).join('')}</select></div>
           <div class="tt"><a href="#tasks" data-edit="${esc(t.id)}" style="color:inherit;text-decoration:none">${esc(t.title)}</a></div>
           <div class="meta2"><span class="org ${esc(t.owner)}">${esc(ORGS[t.owner]||t.owner)}</span></div>
-          <div class="meta2"><span class="due${late?' late':''}">${t.due?esc(t.due):'—'}</span></div>
+          <div class="meta2"><span class="dates"><span>Start ${esc(t.start||'—')}</span><span class="${late?'late':''}">Planned ${esc(t.due||'—')}</span>${t.doneOn?`<span class="done">✓ Completed ${esc(t.doneOn)}</span>`:''}</span></div>
           <div>${S.confirmDel===t.id?`<span class="confirm"><button class="btn warn" data-del="${esc(t.id)}">Delete</button><button class="btn ghost" data-nodel>Keep</button></span>`
             :`<button class="btn ghost" data-askdel="${esc(t.id)}" aria-label="Delete task" title="Delete task" ${dis?'disabled':''}>✕</button>`}</div>
         </div>`;
@@ -1536,7 +1598,9 @@ a.visit:hover{background:var(--amber);color:#fff}
     const empty=!S.tasks.length?`<div style="padding:16px">${loadingOrEmpty('tasks','<div class="empty">No tasks yet. Add the first one below.</div>')}</div>`:'';
     v.innerHTML=tb+`<div class="rows">${empty||body}${writable()?taskForm(null):''}</div>`;
     v.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{ S.filter=b.dataset.filter; render(); }));
-    v.querySelectorAll('[data-status]').forEach(sel=>sel.addEventListener('change',()=>write(()=>api.updTask(sel.dataset.status,{status:sel.value}),'Status updated')));
+    v.querySelectorAll('[data-status]').forEach(sel=>sel.addEventListener('change',()=>{ const t=S.tasks.find(x=>x.id===sel.dataset.status); const f={status:sel.value};
+      if(sel.value==='done' && t && !t.doneOn) f.doneOn=today(); if(sel.value!=='done' && t && t.doneOn) f.doneOn='';
+      write(()=>api.updTask(sel.dataset.status,f),'Status updated'); }));
     v.querySelectorAll('[data-edit]').forEach(a=>a.addEventListener('click',e=>{ e.preventDefault(); if(!writable()) return; S.editing=a.dataset.edit; render(); }));
     v.querySelectorAll('[data-cancel]').forEach(b=>b.addEventListener('click',()=>{ S.editing=null; render(); }));
     v.querySelectorAll('[data-askdel]').forEach(b=>b.addEventListener('click',()=>{ S.confirmDel=b.dataset.askdel; render(); }));
@@ -1547,13 +1611,14 @@ a.visit:hover{background:var(--amber);color:#fff}
       d.title=(d.title||'').trim(); if(!d.title){ toast('Give the task a name.'); return; }
       const now=new Date().toISOString();
       if(id==='new'){ if(await write(()=>api.addTask(d),'Task added')) fm.reset(); }
-      else { if(await write(()=>api.updTask(id,{title:d.title, owner:d.owner, phase:d.phase, due:d.due||null}),'Task saved')){ S.editing=null; render(); } }
+      else { const f={title:d.title, owner:d.owner, phase:d.phase, start:d.start||'', due:d.due||'', doneOn:d.doneOn||''}; if(f.doneOn) f.status='done';
+        if(await write(()=>api.updTask(id,f),'Task saved')){ S.editing=null; render(); } }
     }));
   }
 
   function renderDecisions(){
     const v=$('#v-decisions');
-    const head=`<div class="toolbar"><div><h2>Decisions</h2><p class="small muted" style="margin:4px 0 0">Points JRC and EDUROS need to agree. Record the outcome once agreed.</p></div></div>`;
+    const head=`<div class="toolbar"><div><h2>Decisions</h2><p class="small muted" style="margin:4px 0 0">Points JRC and EDUROS need to agree, with start, planned completion and completed dates. Record the outcome once agreed.</p></div></div>`;
     if(!S.decisions.length){ v.innerHTML=head+`<div class="panel">${loadingOrEmpty('decisions','<div class="empty">No decisions listed yet.</div>')}</div>`; return; }
     const cards=S.decisions.slice().sort((a,b)=>(a.no??99)-(b.no??99)).map(d=>{
       const ref='decisions/'+d.id, open=S.open.has('dec:'+d.id), dis=!writable(), n=commentsFor(ref).length;
@@ -1562,6 +1627,7 @@ a.visit:hover{background:var(--amber);color:#fff}
         <div class="top"><div><span class="num">Decision ${esc(d.no)}</span><h3 style="font-size:16px;margin-top:2px">${esc(d.title)}</h3></div>
           <select id="ds-${esc(d.id)}" data-dstatus="${esc(d.id)}" aria-label="Decision status" style="width:auto" ${dis?'disabled':''}>${Object.entries(DEC_STATUS).map(([k,l])=>`<option value="${k}"${d.status===k?' selected':''}>${l}</option>`).join('')}</select></div>
         ${d.context?`<p class="small" style="margin:0">${esc(d.context)}</p>`:''}
+        <div class="dfields">${[['start','Start'],['due','Planned completion'],['doneOn','Completed']].map(([k,l])=>`<label>${l}${dis?`<span class="ro">${esc(d[k]||'—')}</span>`:`<input type="date" id="dd-${esc(d.id)}-${k}" data-ddate="${esc(d.id)}" data-dk="${k}" value="${esc(d[k]||'')}">`}</label>`).join('')}</div>
         ${Array.isArray(d.options)&&d.options.length?`<ul class="small">${d.options.map(o=>`<li>${esc(o)}</li>`).join('')}</ul>`:''}
         ${edit?`<label class="small muted" for="do-${esc(d.id)}">Agreed outcome</label><textarea id="do-${esc(d.id)}">${esc(d.outcome||'')}</textarea>
             <div class="btns"><button class="btn ghost" data-dcancel>Cancel</button><button class="btn primary" data-dsave="${esc(d.id)}">Save outcome</button></div>`
@@ -1572,13 +1638,132 @@ a.visit:hover{background:var(--amber);color:#fff}
       </div>`; }).join('');
     v.innerHTML=head+`<div class="dgrid">${cards}</div>`;
     v.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.toggle; S.open.has(k)?S.open.delete(k):S.open.add(k); render(); }));
-    v.querySelectorAll('[data-dstatus]').forEach(sel=>sel.addEventListener('change',()=>write(()=>api.updDec(sel.dataset.dstatus,{status:sel.value}),'Decision updated')));
+    v.querySelectorAll('[data-dstatus]').forEach(sel=>sel.addEventListener('change',()=>{ const d=S.decisions.find(x=>x.id===sel.dataset.dstatus); const f={status:sel.value};
+      if(sel.value==='agreed' && d && !d.doneOn) f.doneOn=today(); if(sel.value!=='agreed' && d && d.doneOn) f.doneOn='';
+      write(()=>api.updDec(sel.dataset.dstatus,f),'Decision updated'); }));
+    v.querySelectorAll('[data-ddate]').forEach(inp=>inp.addEventListener('change',()=>{ const f={}; f[inp.dataset.dk]=inp.value||''; if(inp.dataset.dk==='doneOn' && inp.value) f.status='agreed';
+      write(()=>api.updDec(inp.dataset.ddate,f),'Decision updated'); }));
     v.querySelectorAll('[data-dedit]').forEach(b=>b.addEventListener('click',()=>{ S.editing='dec:'+b.dataset.dedit; render(); }));
     v.querySelectorAll('[data-dcancel]').forEach(b=>b.addEventListener('click',()=>{ S.editing=null; render(); }));
     v.querySelectorAll('[data-dsave]').forEach(b=>b.addEventListener('click',async()=>{ const id=b.dataset.dsave; const val=$('#do-'+id).value.trim();
       if(await write(()=>api.updDec(id,{outcome:val}),'Outcome saved')){ S.editing=null; render(); } }));
     wireThreads(v);
   }
+
+
+  // ================= Supabase backend (used when JRC_CONFIG has url + anonKey) =================
+  const CFG = window.JRC_CONFIG || {};
+  const MODE = (CFG.url && CFG.anonKey && window.supabase) ? 'supabase' : 'local';
+  let sb = null;
+  const nz = v => (v===''||v===undefined) ? null : v;
+  const TO_DB = {
+    tasks:{start:'start_date', due:'due', doneOn:'done_date', order:'sort'},
+    decisions:{start:'start_date', due:'due_date', doneOn:'done_date'},
+    phases:{start:'start_date', end:'due_date', done:'done_date'},
+  };
+  const DATE_KEYS = new Set(['start_date','due','due_date','done_date']);
+  function toDb(table, f){ const o={}; Object.entries(f).forEach(([k,v])=>{ const dk=(TO_DB[table]||{})[k]||k; o[dk]=DATE_KEYS.has(dk)?nz(v):v; }); return o; }
+  const MAP = {
+    sections:r=>({id:r.id,no:r.no,title:r.title,anchor:r.anchor,summary:r.summary,jrc:r.jrc_status,kj:r.kj_status,jrcAt:r.jrc_at,kjAt:r.kj_at}),
+    tasks:r=>({id:r.id,title:r.title,owner:r.owner,phase:r.phase,status:r.status,start:r.start_date||'',due:r.due||'',doneOn:r.done_date||'',order:r.sort}),
+    decisions:r=>({id:r.id,no:r.no,title:r.title,context:r.context,options:Array.isArray(r.options)?r.options:[],status:r.status,outcome:r.outcome||'',start:r.start_date||'',due:r.due_date||'',doneOn:r.done_date||''}),
+    comments:r=>{ const m=memberOf(r.author_email); return {id:r.id,ref:r.ref,body:r.body,org:r.org,author:(m&&m.name)||r.author_email,at:r.created_at}; },
+    phases:r=>({id:r.id,name:r.name,sort:r.sort,start:r.start_date||'',end:r.due_date||'',done:r.done_date||''}),
+    documents:r=>({id:r.id,cat:r.cat,name:r.name,size:r.size,type:r.mime,path:r.path,org:r.org,author:r.author_email,at:r.created_at}),
+  };
+  const ORDER = {sections:'no',tasks:'sort',decisions:'no',comments:'created_at',phases:'sort',documents:'created_at',doc_status:'cat'};
+  async function run(p, expectRows){ const {data,error}=await p; if(error) throw error; if(expectRows && (!data || !data.length)) throw {code:'norows'}; return data; }
+  async function sbLoad(name){
+    const {data,error}=await sb.from(name).select('*').order(ORDER[name]);
+    if(error){ S.dbState='error'; render(); return; }
+    if(name==='phases') setPhases(data.map(MAP.phases));
+    else if(name==='documents'){ S.docs=data.map(MAP.documents); S.docsLoaded=true; }
+    else if(name==='doc_status'){ S.docStatus=Object.assign({proposal:'none',nda:'none',contract:'none'}, Object.fromEntries(data.map(r=>[r.cat,r.status]))); }
+    else { S[name]=data.map(MAP[name]); S.loaded[name]=true; }
+    safeRenderLocal();
+  }
+  const apiSb = {
+    updPhase:(id,f)=>run(sb.from('phases').update(toDb('phases',f)).eq('id',id).select('id'),true),
+    setDocStatus:(cat,st)=>run(sb.from('doc_status').upsert({cat,status:st}).select('cat'),true),
+    sign:(id,v)=>run(sb.from('sections').update({[S.org+'_status']:v}).eq('id',id).select('id'),true),
+    addComment:(ref,body)=>run(sb.from('comments').insert({ref, body, org:S.org})),
+    addTask:d=>run(sb.from('tasks').insert(toDb('tasks',{title:d.title, owner:d.owner, phase:d.phase, start:d.start||'', due:d.due||'', doneOn:d.doneOn||'', status:d.doneOn?'done':'todo'}))),
+    updTask:(id,f)=>run(sb.from('tasks').update(toDb('tasks',f)).eq('id',id).select('id'),true),
+    delTask:id=>run(sb.from('tasks').delete().eq('id',id).select('id'),true),
+    updDec:(id,f)=>run(sb.from('decisions').update(toDb('decisions',f)).eq('id',id).select('id'),true),
+  };
+  // documents in Supabase Storage (private bucket "documents")
+  async function uploadDocSb(cat,file){
+    if(!writable()){ toast('Sign in as a project member to upload.'); return; }
+    if(file.size>MAX_FILE){ toast('That file is larger than 20 MB.'); return; }
+    const safe=file.name.replace(/[^\w.\-]+/g,'_').slice(-120);
+    const path=cat+'/'+Date.now().toString(36)+'-'+safe;
+    const up=await sb.storage.from('documents').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});
+    if(up.error){ toast('Could not upload: '+up.error.message); return; }
+    const ins=await sb.from('documents').insert({cat,name:file.name,size:file.size,mime:file.type||'application/octet-stream',path,org:S.org});
+    if(ins.error){ await sb.storage.from('documents').remove([path]); toast('Could not save: '+ins.error.message); return; }
+    if(S.docStatus[cat]==='none'){ try{ await apiSb.setDocStatus(cat,'draft'); }catch(e){} }
+    toast('Uploaded '+file.name);
+  }
+  async function openDocSb(id){
+    const d=S.docs.find(x=>x.id===id); if(!d){ toast('File not found.'); return; }
+    const {data,error}=await sb.storage.from('documents').createSignedUrl(d.path,600,{download:/pdf|image|text/.test(d.type||'')?false:d.name});
+    if(error||!data){ toast('File not found.'); return; }
+    const a=document.createElement('a'); a.href=data.signedUrl; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
+  }
+  async function deleteDocSb(id){
+    const d=S.docs.find(x=>x.id===id); if(!d) return;
+    const del=await sb.from('documents').delete().eq('id',id).select('id');
+    if(del.error||!del.data||!del.data.length){ toast('You do not have permission to change this.'); return; }
+    await sb.storage.from('documents').remove([d.path]); toast('File deleted');
+  }
+  function renderBannerSb(b){
+    let h='';
+    if(S.dbState==='signedout') h=`<div class="note"><b>Sign in to the project room.</b> Enter your work e-mail and we will send you a sign-in link.
+        <form class="login" id="loginForm"><input type="email" id="loginEmail" required placeholder="name@company.com" value="${esc(S.loginEmail||'')}" autocomplete="email"><button class="btn primary" type="submit">Send sign-in link</button></form>
+        ${S.loginSent?`<div class="small" style="margin-top:6px">Link sent to <b>${esc(S.loginSent)}</b>. Open it on this device to sign in.</div>`:''}</div>`;
+    else if(S.dbState==='notmember') h=`<div class="note warn">You are signed in as <b>${esc(S.email||'')}</b>, but this address is not on the project member list. Ask KJ Engineering to add it.</div>`;
+    else if(S.dbState==='error') h='<div class="note warn">Could not load the project data. Check the connection settings and try again.</div>';
+    b.innerHTML=h; b.style.marginBottom=h?'16px':'0';
+    const f=$('#loginForm'); if(f){ const inp=$('#loginEmail'); inp.addEventListener('input',()=>{S.loginEmail=inp.value;});
+      f.addEventListener('submit',async e=>{ e.preventDefault(); const email=inp.value.trim(); if(!email) return;
+        const btn=f.querySelector('button'); btn.disabled=true;
+        const {error}=await sb.auth.signInWithOtp({email, options:{emailRedirectTo: location.href.split('#')[0]}});
+        btn.disabled=false; if(error){ toast('Could not send the link: '+error.message); return; }
+        S.loginSent=email; render(); }); }
+  }
+  function paintWho(){
+    const w=$('#whoami'), o=$('#signout'); w.hidden=false;
+    w.textContent=S.member?((S.member.name||S.email)+' · '+(ORGS[S.member.org]||'')):(S.email||'Not signed in');
+    o.hidden=!S.session;
+  }
+  const SB_TABLES=['sections','tasks','decisions','comments','phases','documents','doc_status'];
+  async function setSession(session){
+    const uid=session&&session.user?session.user.id:null;
+    if(S.started && uid===S.uid) return;
+    S.session=session; S.uid=uid; S.email=session&&session.user?session.user.email:null;
+    if(!session){ S.member=null; S.org=null; S.dbState='signedout'; paintWho(); render(); return; }
+    const {data,error}=await sb.from('members').select('email,name,org');
+    if(error){ S.dbState='error'; paintWho(); render(); return; }
+    S.members=data||[]; const me=memberOf(S.email);
+    if(!me){ S.member=null; S.org=null; S.dbState='notmember'; paintWho(); render(); return; }
+    S.member=me; S.org=me.org; S.dbState='ok'; paintWho();
+    if(!S.started){ S.started=true; SB_TABLES.forEach(sbLoad);
+      const timers={}; sb.channel('project-room').on('postgres_changes',{event:'*',schema:'public'},p=>{ const t=p.table; if(!SB_TABLES.includes(t)) return; clearTimeout(timers[t]); timers[t]=setTimeout(()=>sbLoad(t),250); }).subscribe(); }
+    render();
+  }
+  async function initSupabase(){
+    sb=window.supabase.createClient(CFG.url, CFG.anonKey);
+    ['orgSeg','asLabel','resetBox'].forEach(id=>{ const e=$('#'+id); if(e) e.hidden=true; });
+    S.sections=[]; S.tasks=[]; S.decisions=[]; S.comments=[]; S.docs=[]; S.docStatus={proposal:'none',nda:'none',contract:'none'};
+    $('#signout').addEventListener('click',async()=>{ await sb.auth.signOut(); location.reload(); });
+    sb.auth.onAuthStateChange((ev,session)=>{ setTimeout(()=>setSession(session),0); });
+    const {data}=await sb.auth.getSession(); await setSession(data.session);
+  }
+  let api = MODE==='supabase' ? apiSb : null;
+  const uploadDoc=(c,f)=>MODE==='supabase'?uploadDocSb(c,f):uploadDocLocal(c,f);
+  const openDoc=id=>MODE==='supabase'?openDocSb(id):openDocLocal(id);
+  const deleteDoc=id=>MODE==='supabase'?deleteDocSb(id):deleteDocLocal(id);
 
   // ---------- data (local demo) ----------
   const SEED = {"sections": [{"id": "s02", "no": 2, "title": "Executive Summary", "anchor": "s2", "summary": "Godot 4 simulation core with no licence fees; JAN-9301 added to the existing EDUROS platform; the proven 13-stage, 840-min course carried over; ready before the 2028 product release.", "jrc": "pending", "kj": "pending"}, {"id": "s03", "no": 3, "title": "Our Partnership Track Record", "anchor": "s3", "summary": "20+ years as JRC's official agent in Korea, ECDIS curriculum co-developed with JRC HQ in 2013, JAN-901B and JAN-9201 courses on EDUROS today.", "jrc": "pending", "kj": "pending"}, {"id": "s04", "no": 4, "title": "References: Training Delivered to Date", "anchor": "sref", "summary": "Course Types A–E: 14,034 training records in total (JAN-901B series 3,645, JAN-9201 series 10,389).", "jrc": "pending", "kj": "pending"}, {"id": "s05", "no": 5, "title": "Why a New Training Format for JAN-9301", "anchor": "s4", "summary": "From Windows-only apps with large installers and e-mailed accounts to web, PC and tablet access with a one-time install on first web access, self-service accounts, natural voice narration and skill-level records.", "jrc": "pending", "kj": "pending"}, {"id": "s06", "no": 6, "title": "From the Course Outline to the Platform", "anchor": "s5", "summary": "Lecture 320, demonstration 210, exercise 220 and MCQ 90 minutes mapped to online lessons, guided demonstrations, scored CBT exercises and an online MCQ test.", "jrc": "pending", "kj": "pending"}, {"id": "s07", "no": 7, "title": "Course Outline & Timetable: 840 Minutes", "anchor": "s6", "summary": "Current JRC ECDIS course outline (Rev. 0.0) with 13 learning stages, carried over to JAN-9301 with stage content updated to JAN-9301 functions. See the ClassNK guide for how the stages cover the 10 NK learning areas.", "jrc": "pending", "kj": "pending"}, {"id": "s08", "no": 8, "title": "Technology: Godot 4", "anchor": "s7", "summary": "Open-source engine (MIT licence) for a 2D CBT JAN-9301 screen replica; delivered by web access with one-time install, Windows PC and tablet; records kept in the existing EDUROS LMS.", "jrc": "pending", "kj": "pending"}, {"id": "s09", "no": 9, "title": "One Platform for All JRC ECDIS Series", "anchor": "s8", "summary": "JAN-901B, JAN-9201 and JAN-9301 on eduros.com with one pattern: one account and training history, the same course and certificate steps, one place to manage records and certificates, and a new model added as a series rather than a new system.", "jrc": "pending", "kj": "pending"}, {"id": "s10", "no": 10, "title": "Learning Records & Certification", "anchor": "s9", "summary": "Trainee results flow to the EDUROS LMS and certificate; example assessed actions for stages 5, 6, 7 and 11; results kept offline and synced when connected.", "jrc": "pending", "kj": "pending"}, {"id": "s11", "no": 11, "title": "Certificate Issuance Procedure", "anchor": "scert", "summary": "Log in, contents learning, complete, test, pass, user verification (interview, guarantee letter), pass, JRC TST certificate issue.", "jrc": "pending", "kj": "pending"}, {"id": "s12", "no": 12, "title": "Roadmap 2026 – 2028", "anchor": "s10", "summary": "PoC Q4 2026 – Q1 2027 (Stage 5 Route planning), full development H1 2027, launch H2 2027, JAN-9301 release 2028.", "jrc": "pending", "kj": "pending"}, {"id": "s13", "no": 13, "title": "Under Review: Cyber Security (IACS UR E26/E27)", "anchor": "sreview", "summary": "Not part of the type-specific syllabus. Options: A not included, B separate optional module on EDUROS, C add later if JRC confirms operator-level procedures.", "jrc": "pending", "kj": "pending"}, {"id": "s14", "no": 14, "title": "Roles & Points to Agree", "anchor": "s11", "summary": "What JRC provides (software, emulator, UI specifications and assets, technical review, co-branding) and what EDUROS / KJ Engineering provides (development, platform, instructors, updates).", "jrc": "pending", "kj": "pending"}], "tasks": [{"id": "t01", "title": "Kick-off meeting with the JRC training team", "owner": "joint", "phase": "poc", "due": "", "order": 1, "status": "todo"}, {"id": "t02", "title": "Agree PoC scope (Stage 5 Route planning) and review schedule", "owner": "joint", "phase": "poc", "due": "", "order": 2, "status": "todo"}, {"id": "t03", "title": "Share JAN-9301 software, emulator and UI specifications", "owner": "jrc", "phase": "poc", "due": "", "order": 3, "status": "todo"}, {"id": "t04", "title": "Provide JAN-9301 screen designs, icons and UI assets", "owner": "jrc", "phase": "poc", "due": "", "order": 4, "status": "todo"}, {"id": "t05", "title": "Build Stage 5 Route planning PoC (2D CBT, Godot 4) on web and PC", "owner": "kj", "phase": "poc", "due": "", "order": 5, "status": "todo"}, {"id": "t06", "title": "Joint PoC review before end of Q1 2027", "owner": "joint", "phase": "poc", "due": "2027-03-31", "order": 6, "status": "todo"}, {"id": "t07", "title": "Develop all 13 stages as 2D CBT", "owner": "kj", "phase": "dev", "due": "", "order": 1, "status": "todo"}, {"id": "t08", "title": "Build the JAN-9301 MCQ question bank", "owner": "kj", "phase": "dev", "due": "", "order": 2, "status": "todo"}, {"id": "t09", "title": "Natural multilingual voice narration", "owner": "kj", "phase": "dev", "due": "", "order": 3, "status": "todo"}, {"id": "t10", "title": "Add JAN-9301 series to the EDUROS LMS (self-service account and install, certificate type)", "owner": "kj", "phase": "dev", "due": "", "order": 4, "status": "todo"}, {"id": "t11", "title": "Technical review of content and scenarios", "owner": "jrc", "phase": "dev", "due": "", "order": 5, "status": "todo"}, {"id": "t12", "title": "Confirm ClassNK learning-area coverage for JAN-9301 (areas a–j)", "owner": "joint", "phase": "dev", "due": "", "order": 6, "status": "todo"}, {"id": "t13", "title": "Launch the online service on EDUROS", "owner": "kj", "phase": "launch", "due": "", "order": 1, "status": "todo"}, {"id": "t14", "title": "Pilot with training centres and fleets", "owner": "joint", "phase": "launch", "due": "", "order": 2, "status": "todo"}, {"id": "t15", "title": "Co-branding and promotion to JRC customers", "owner": "jrc", "phase": "launch", "due": "", "order": 3, "status": "todo"}, {"id": "t16", "title": "Align content with the final JAN-9301 software", "owner": "joint", "phase": "release", "due": "", "order": 1, "status": "todo"}, {"id": "t17", "title": "Global roll-out and updates aligned with JRC software releases", "owner": "joint", "phase": "release", "due": "", "order": 2, "status": "todo"}], "decisions": [{"id": "d1", "no": 1, "title": "PoC scope and review schedule", "context": "Proposed PoC: Stage 5 Route planning (120 min), built on web and PC, reviewed jointly with the JRC training team.", "options": [], "status": "open", "outcome": ""}, {"id": "d2", "no": 2, "title": "Timing and terms for sharing JAN-9301 data", "context": "JAN-9301 software, emulator, UI specifications and screen assets needed before the PoC can start.", "options": [], "status": "open", "outcome": ""}, {"id": "d3", "no": 3, "title": "Cyber security (IACS UR E26/E27)", "context": "Not part of the JRC ECDIS type-specific syllabus. Whether and how to cover it is under review.", "options": ["A: Not included", "B: Separate optional module on EDUROS, outside the 840-min syllabus and the TST certificate", "C: Add later if JRC confirms operator-level security procedures in the JAN-9301 manual"], "status": "open", "outcome": ""}, {"id": "d4", "no": 4, "title": "Kick-off meeting and PoC review timing", "context": "Kick-off with the JRC training team, and PoC review before the end of Q1 2027.", "options": [], "status": "open", "outcome": ""}, {"id": "d5", "no": 5, "title": "Use of Stage 12 (Operation of the former ECDIS)", "context": "Proposed use for JAN-9301: a migration course for trainees moving from JAN-9201. Stage 12 is not mapped to a ClassNK learning area.", "options": [], "status": "open", "outcome": ""}], "comments": []};
@@ -1591,6 +1776,7 @@ a.visit:hover{background:var(--amber);color:#fff}
     if(!data || !Array.isArray(data.sections)) data=clone(SEED);
     ['sections','tasks','decisions','comments'].forEach(k=>{ S[k]=Array.isArray(data[k])?data[k]:clone(SEED[k]); S.loaded[k]=true; });
     S.docStatus=Object.assign({proposal:'review',nda:'none',contract:'none'}, data.docStatus||{});
+    setPhases(Array.isArray(data.phases)?data.phases:[]);
     sortAll();
   }
   // files live in IndexedDB (localStorage is too small for documents)
@@ -1599,56 +1785,59 @@ a.visit:hover{background:var(--amber);color:#fff}
       r.onupgradeneeded=()=>r.result.createObjectStore('files',{keyPath:'id'}); r.onsuccess=()=>res(r.result); r.onerror=()=>res(null); }catch(e){ res(null); } }); return idbP; }
   async function idbTx(mode, fn){ const db=await idb(); if(!db) return fn(null); return new Promise((res,rej)=>{ const tx=db.transaction('files',mode); const st=tx.objectStore('files'); let out; Promise.resolve(fn(st)).then(v=>out=v); tx.oncomplete=()=>res(out); tx.onerror=()=>rej(tx.error); }); }
   const reqP=r=>new Promise((res,rej)=>{ r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); });
-  async function loadDocs(){
+  async function loadDocsLocal(){
     try{ const all=await idbTx('readonly',st=>st?reqP(st.getAll()):[...memFiles.values()]); S.docs=(all||[]).map(({blob,...m})=>m); }
     catch(e){ S.docs=[...memFiles.values()].map(({blob,...m})=>m); }
     S.docsLoaded=true; safeRenderLocal();
   }
   function safeRenderLocal(){ const a=document.activeElement; if(a && (a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&a.type==='text'))){ S.pending=true; return; } render(); }
   const bc=(()=>{ try{ return new BroadcastChannel('jan9301-room-demo'); }catch(e){ return null; } })();
-  if(bc) bc.onmessage=e=>{ if(e.data==='docs'){ loadStore(); loadDocs(); } };
+  if(bc) bc.onmessage=e=>{ if(MODE==='local' && e.data==='docs'){ loadStore(); loadDocsLocal(); } };
   function notifyDocs(){ if(bc) try{ bc.postMessage('docs'); }catch(e){} }
-  async function uploadDoc(cat,file){
+  async function uploadDocLocal(cat,file){
     if(!writable()){ toast('Choose “Demo as” at the top first.'); return; }
     if(file.size>MAX_FILE){ toast('That file is larger than 20 MB.'); return; }
     const rec={id:newId('f'),cat,name:file.name,size:file.size,type:file.type||'application/octet-stream',org:S.org,author:DEMO_NAMES[S.org],at:nowIso(),blob:file};
     try{ await idbTx('readwrite',st=>{ if(st) st.put(rec); else memFiles.set(rec.id,rec); }); }
     catch(e){ toast('Could not store the file in this browser.'); return; }
     if(cat in S.docStatus && S.docStatus[cat]==='none'){ S.docStatus[cat]='draft'; saveStore(); }
-    await loadDocs(); notifyDocs(); toast('Uploaded '+file.name);
+    await loadDocsLocal(); notifyDocs(); toast('Uploaded '+file.name);
   }
-  async function openDoc(id){
+  async function openDocLocal(id){
     let rec=null; try{ rec=await idbTx('readonly',st=>st?reqP(st.get(id)):memFiles.get(id)); }catch(e){}
     if(!rec||!rec.blob){ toast('File not found.'); return; }
     const url=URL.createObjectURL(rec.blob); const a=document.createElement('a'); a.href=url;
     if(/pdf|image|text/.test(rec.type)) a.target='_blank'; else a.download=rec.name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
   }
-  async function deleteDoc(id){
+  async function deleteDocLocal(id){
     try{ await idbTx('readwrite',st=>{ if(st) st.delete(id); else memFiles.delete(id); }); }catch(e){ toast('Could not delete the file.'); return; }
-    await loadDocs(); notifyDocs(); toast('File deleted');
+    await loadDocsLocal(); notifyDocs(); toast('File deleted');
   }
-  async function clearDocs(){ try{ await idbTx('readwrite',st=>{ if(st) st.clear(); else memFiles.clear(); }); }catch(e){} await loadDocs(); notifyDocs(); }
+  async function clearDocs(){ try{ await idbTx('readwrite',st=>{ if(st) st.clear(); else memFiles.clear(); }); }catch(e){} await loadDocsLocal(); notifyDocs(); }
 
   function sortAll(){ S.sections.sort((a,b)=>a.no-b.no); S.decisions.sort((a,b)=>a.no-b.no); }
   function saveStore(){
     if(!S.persist) return;
-    try{ localStorage.setItem(KEY, JSON.stringify({sections:S.sections,tasks:S.tasks,decisions:S.decisions,comments:S.comments,docStatus:S.docStatus,savedAt:new Date().toISOString()})); }
+    try{ localStorage.setItem(KEY, JSON.stringify({sections:S.sections,tasks:S.tasks,decisions:S.decisions,comments:S.comments,docStatus:S.docStatus,phases:PHASES.map(({when,...p})=>p),savedAt:new Date().toISOString()})); }
     catch(e){ S.persist=false; toast('Browser storage is full or blocked; changes last until you close the page.'); }
   }
   const nowIso=()=>new Date().toISOString();
   const newId=p=>p+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
   function commit(){ saveStore(); render(); }
-  const api={
+  const apiLocal={
+    updPhase:async(id,f)=>{ const p=PHASES.find(x=>x.id===id); if(!p) throw {code:'norows'}; Object.assign(p,f); setPhases(PHASES.map(({when,...x})=>x)); commit(); },
+    setDocStatus:async(cat,st)=>{ S.docStatus[cat]=st; saveStore(); notifyDocs(); render(); },
     sign:async(id,v)=>{ const s=S.sections.find(x=>x.id===id); if(!s) throw {code:'norows'}; s[S.org]=v; s[S.org+'At']=nowIso(); commit(); },
     addComment:async(ref,body)=>{ S.comments.push({id:newId('c'),ref,body,org:S.org,author:DEMO_NAMES[S.org],at:nowIso()}); commit(); },
-    addTask:async d=>{ S.tasks.push({id:newId('t'),title:d.title,owner:d.owner,phase:d.phase,due:d.due||'',status:'todo',order:99}); commit(); },
-    updTask:async(id,f)=>{ const t=S.tasks.find(x=>x.id===id); if(!t) throw {code:'norows'}; Object.assign(t,f,{due:('due' in f)?(f.due||''):t.due}); commit(); },
+    addTask:async d=>{ S.tasks.push({id:newId('t'),title:d.title,owner:d.owner,phase:d.phase,start:d.start||'',due:d.due||'',doneOn:d.doneOn||'',status:d.doneOn?'done':'todo',order:99}); commit(); },
+    updTask:async(id,f)=>{ const t=S.tasks.find(x=>x.id===id); if(!t) throw {code:'norows'}; Object.assign(t,f); commit(); },
     delTask:async id=>{ const i=S.tasks.findIndex(x=>x.id===id); if(i<0) throw {code:'norows'}; S.tasks.splice(i,1); commit(); },
     updDec:async(id,f)=>{ const d=S.decisions.find(x=>x.id===id); if(!d) throw {code:'norows'}; Object.assign(d,f); commit(); },
   };
+  if(!api) api=apiLocal;
   // keep two demo windows in step
-  window.addEventListener('storage',e=>{ if(e.key===KEY){ loadStore(); const a=document.activeElement; if(a && (a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&a.type==='text'))){ S.pending=true; return; } render(); } });
+  window.addEventListener('storage',e=>{ if(MODE==='local' && e.key===KEY){ loadStore(); const a=document.activeElement; if(a && (a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&a.type==='text'))){ S.pending=true; return; } render(); } });
 
   // demo identity is per window, so two windows can show both sides
   function paintOrg(){ document.querySelectorAll('.seg:not(.lang) button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.org===S.org))); }
@@ -1656,7 +1845,7 @@ a.visit:hover{background:var(--amber);color:#fff}
   function paintReset(){
     const box=$('#resetBox');
     if(S.confirmReset){ box.innerHTML='<span class="confirm"><span class="small">Clear all demo changes?</span><button type="button" class="btn warn" id="resetYes">Reset</button><button type="button" class="btn ghost" id="resetNo">Keep</button></span>';
-      $('#resetYes').addEventListener('click',()=>{ S.confirmReset=false; const d=clone(SEED); ['sections','tasks','decisions','comments'].forEach(k=>S[k]=d[k]); S.docStatus={proposal:'review',nda:'none',contract:'none'}; clearDocs(); sortAll(); S.open.clear(); S.drafts={}; saveStore(); paintReset(); render(); toast('Demo data reset'); });
+      $('#resetYes').addEventListener('click',()=>{ S.confirmReset=false; const d=clone(SEED); ['sections','tasks','decisions','comments'].forEach(k=>S[k]=d[k]); S.docStatus={proposal:'review',nda:'none',contract:'none'}; setPhases([]); clearDocs(); sortAll(); S.open.clear(); S.drafts={}; saveStore(); paintReset(); render(); toast('Demo data reset'); });
       $('#resetNo').addEventListener('click',()=>{ S.confirmReset=false; paintReset(); }); }
     else { box.innerHTML='<button type="button" class="btn ghost" id="resetBtn">Reset demo</button>'; $('#resetBtn').addEventListener('click',()=>{ S.confirmReset=true; paintReset(); }); }
   }
@@ -1723,8 +1912,8 @@ a.visit:hover{background:var(--amber);color:#fff}
     document.querySelectorAll('.seg.lang button').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.lang)));
     paintOrg(); paintReset(); paintLang();
     S.docs=[]; S.docStatus={proposal:'review',nda:'none',contract:'none'};
-    loadStore(); S.dbState='ok'; loadDocs();
-    route();
+    if(MODE==='supabase'){ route(); initSupabase(); }
+    else { loadStore(); S.dbState='ok'; loadDocsLocal(); route(); }
     translateTree(document.body); observeI18n();
   }
   document.addEventListener('focusout',()=>{ setTimeout(()=>{ const a=document.activeElement; if(S.pending && !(a && (a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&a.type==='text')))){ S.pending=false; render(); } },0); });
