@@ -191,6 +191,12 @@ table.ps input{padding:4px 6px;font-size:13px;width:auto}
 @media (max-width:860px){.form{grid-template-columns:1fr 1fr}.dfields{grid-template-columns:1fr 1fr 1fr}}
 @media (max-width:600px){.rows .trow{grid-template-columns:minmax(0,1fr) 40px}.dfields{grid-template-columns:1fr}}
 
+/* inline task dates */
+.trow .tdl{grid-column:2/-1;display:flex;gap:14px;flex-wrap:wrap;margin-top:-2px}
+.trow .tdl label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:500}
+.trow .tdl input{width:auto;padding:3px 6px;font-size:12.5px}
+@media (max-width:600px){.trow .tdl{grid-column:1/-1}}
+
 /* landing */
 .hero{display:flex;flex-direction:column;gap:12px;padding-block:20px 8px;max-width:780px}
 .hero .eyebrow{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
@@ -983,7 +989,7 @@ a.visit:hover{background:var(--amber);color:#fff}
 
   // ---------- language (UI labels only; proposal text and project data stay as written) ----------
   const I18N={
-"Start": "開始日", "Planned completion": "完了予定日", "Completed": "完了日", "Phase schedule": "フェーズ日程", "Start · Planned completion · Completed": "開始日 · 完了予定日 · 完了日", "Schedule updated": "日程を更新しました", "Overdue": "期限超過", "Shared work plan by roadmap phase, with start, planned completion and completed dates. Change the status from the list; select a task to edit it.": "ロードマップのフェーズ別に共有する作業計画です。開始日・完了予定日・完了日を管理します。一覧からステータスを変更し、タスクを選択すると編集できます。", "Points JRC and EDUROS need to agree, with start, planned completion and completed dates. Record the outcome once agreed.": "JRCとEDUROSが合意すべき事項です。開始日・完了予定日・完了日を管理し、合意したら結果を記録してください。", "Sign in as a project member to upload.": "アップロードするにはプロジェクトメンバーとしてログインしてください。", "Files are stored in the project’s private Supabase storage. Only project members can open them.": "ファイルはプロジェクト専用のSupabaseストレージに保存され、プロジェクトメンバーのみが開けます。", "Sign out": "ログアウト", "Not signed in": "未ログイン", "Send sign-in link": "ログインリンクを送信", "Sign in to the project room.": "プロジェクトルームにログインしてください。", "Enter your work e-mail and we will send you a sign-in link.": "業務用メールアドレスを入力すると、ログインリンクをお送りします。", "Could not load the project data. Check the connection settings and try again.": "プロジェクトデータを読み込めませんでした。接続設定を確認して再度お試しください。", "Sign in to see the project data.": "プロジェクトデータを見るにはログインしてください。", "Sign in as a project member to sign off or comment.": "承認やコメントにはプロジェクトメンバーとしてログインしてください。", "Ask KJ Engineering to add it.": "KJ Engineeringに追加を依頼してください。",
+"Dates updated":"日付を更新しました","Start": "開始日", "Planned completion": "完了予定日", "Completed": "完了日", "Phase schedule": "フェーズ日程", "Start · Planned completion · Completed": "開始日 · 完了予定日 · 完了日", "Schedule updated": "日程を更新しました", "Overdue": "期限超過", "Shared work plan by roadmap phase, with start, planned completion and completed dates. Change the status from the list; select a task to edit it.": "ロードマップのフェーズ別に共有する作業計画です。開始日・完了予定日・完了日を管理します。一覧からステータスを変更し、タスクを選択すると編集できます。", "Points JRC and EDUROS need to agree, with start, planned completion and completed dates. Record the outcome once agreed.": "JRCとEDUROSが合意すべき事項です。開始日・完了予定日・完了日を管理し、合意したら結果を記録してください。", "Sign in as a project member to upload.": "アップロードするにはプロジェクトメンバーとしてログインしてください。", "Files are stored in the project’s private Supabase storage. Only project members can open them.": "ファイルはプロジェクト専用のSupabaseストレージに保存され、プロジェクトメンバーのみが開けます。", "Sign out": "ログアウト", "Not signed in": "未ログイン", "Send sign-in link": "ログインリンクを送信", "Sign in to the project room.": "プロジェクトルームにログインしてください。", "Enter your work e-mail and we will send you a sign-in link.": "業務用メールアドレスを入力すると、ログインリンクをお送りします。", "Could not load the project data. Check the connection settings and try again.": "プロジェクトデータを読み込めませんでした。接続設定を確認して再度お試しください。", "Sign in to see the project data.": "プロジェクトデータを見るにはログインしてください。", "Sign in as a project member to sign off or comment.": "承認やコメントにはプロジェクトメンバーとしてログインしてください。", "Ask KJ Engineering to add it.": "KJ Engineeringに追加を依頼してください。",
 
 "JRC × EDUROS · Joint project": "JRC × EDUROS · 共同プロジェクト",
 "JAN-9301 Type Specific Training": "JAN-9301 機種別トレーニング",
@@ -1589,15 +1595,19 @@ a.visit:hover{background:var(--amber);color:#fff}
           <div class="meta2"><select id="ts-${esc(t.id)}" data-status="${esc(t.id)}" aria-label="Status" ${dis?'disabled':''}>${Object.entries(TASK_STATUS).map(([k,l])=>`<option value="${k}"${t.status===k?' selected':''}>${l}</option>`).join('')}</select></div>
           <div class="tt"><a href="#tasks" data-edit="${esc(t.id)}" style="color:inherit;text-decoration:none">${esc(t.title)}</a></div>
           <div class="meta2"><span class="org ${esc(t.owner)}">${esc(ORGS[t.owner]||t.owner)}</span></div>
-          <div class="meta2"><span class="dates"><span>Start ${esc(t.start||'—')}</span><span class="${late?'late':''}">Planned ${esc(t.due||'—')}</span>${t.doneOn?`<span class="done">✓ Completed ${esc(t.doneOn)}</span>`:''}</span></div>
+          <div class="meta2">${dis?`<span class="dates"><span>Start ${esc(t.start||'—')}</span><span class="${late?'late':''}">Planned ${esc(t.due||'—')}</span>${t.doneOn?`<span class="done">✓ Completed ${esc(t.doneOn)}</span>`:''}</span>`:`<span class="dates">${t.doneOn?`<span class="done">✓ Completed</span>`:late?'<span class="late">Overdue</span>':''}</span>`}</div>
           <div>${S.confirmDel===t.id?`<span class="confirm"><button class="btn warn" data-del="${esc(t.id)}">Delete</button><button class="btn ghost" data-nodel>Keep</button></span>`
             :`<button class="btn ghost" data-askdel="${esc(t.id)}" aria-label="Delete task" title="Delete task" ${dis?'disabled':''}>✕</button>`}</div>
+          ${dis?'':`<div class="tdl">${[['start','Start'],['due','Planned completion'],['doneOn','Completed']].map(([k,l])=>`<label>${l}<input type="date" id="td-${esc(t.id)}-${k}" data-tdate="${esc(t.id)}" data-tk="${k}" value="${esc(t[k]||'')}"></label>`).join('')}</div>`}
         </div>`;
       });
     });
     const empty=!S.tasks.length?`<div style="padding:16px">${loadingOrEmpty('tasks','<div class="empty">No tasks yet. Add the first one below.</div>')}</div>`:'';
     v.innerHTML=tb+`<div class="rows">${empty||body}${writable()?taskForm(null):''}</div>`;
     v.querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{ S.filter=b.dataset.filter; render(); }));
+    v.querySelectorAll('[data-tdate]').forEach(inp=>inp.addEventListener('change',()=>{ const t=S.tasks.find(x=>x.id===inp.dataset.tdate); const f={}; f[inp.dataset.tk]=inp.value||'';
+      if(inp.dataset.tk==='doneOn'){ if(inp.value) f.status='done'; else if(t && t.status==='done') f.status='doing'; }
+      write(()=>api.updTask(inp.dataset.tdate,f),'Dates updated'); }));
     v.querySelectorAll('[data-status]').forEach(sel=>sel.addEventListener('change',()=>{ const t=S.tasks.find(x=>x.id===sel.dataset.status); const f={status:sel.value};
       if(sel.value==='done' && t && !t.doneOn) f.doneOn=today(); if(sel.value!=='done' && t && t.doneOn) f.doneOn='';
       write(()=>api.updTask(sel.dataset.status,f),'Status updated'); }));
@@ -1908,6 +1918,7 @@ a.visit:hover{background:var(--amber);color:#fff}
 
   function init(){
     try{ const o=sessionStorage.getItem(KEY+'-org'); if(o==='jrc'||o==='kj') S.org=o; }catch(e){}
+    if(MODE==='local' && !S.org) S.org='kj';
     document.querySelectorAll('.seg:not(.lang) button').forEach(b=>b.addEventListener('click',()=>setOrg(b.dataset.org)));
     document.querySelectorAll('.seg.lang button').forEach(b=>b.addEventListener('click',()=>setLang(b.dataset.lang)));
     paintOrg(); paintReset(); paintLang();
